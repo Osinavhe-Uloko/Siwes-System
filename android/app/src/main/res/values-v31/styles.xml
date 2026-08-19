@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- On API 31+, Android draws its own system splash screen (icon +
+         background) before Flutter's first frame. The default icon-reveal
+         animation holds the splash on screen for longer than necessary;
+         collapsing its duration to effectively 0 lets it dismiss as soon as
+         the first frame is drawn instead of waiting out the animation. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@android:color/white</item>
+        <item name="android:windowSplashScreenAnimationDuration">1</item>
+    </style>
+</resources>

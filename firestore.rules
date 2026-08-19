@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Read role from users collection. Every account (student, institution
+    // supervisor, industry supervisor, coordinator) has a /users/{uid} doc
+    // with a 'role' field, shared between the web app and the Flutter app.
+    function roleOf(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.role;
+    }
+
+    function isCoordinator() {
+      return isSignedIn() && roleOf(request.auth.uid) == 'coordinator';
+    }
+
+    function isInstitutionSupervisor() {
+      return isSignedIn() && roleOf(request.auth.uid) == 'institution_supervisor';
+    }
+
+    function isIndustrySupervisor() {
+      return isSignedIn() && roleOf(request.auth.uid) == 'industry_supervisor';
+    }
+
+    function isStaff() {
+      return isCoordinator() || isInstitutionSupervisor() || isIndustrySupervisor();
+    }
+
+    function isStudent() {
+      return isSignedIn() && roleOf(request.auth.uid) == 'student';
+    }
+
+    // USERS collection
+    // - Any signed-in user may read profiles (needed to look up students,
+    //   supervisors and names on flags/placements).
+    // - Users may create their own profile (sign-up flow) but cannot choose
+    //   a privileged role for themselves.
+    // - Users may update their own profile but not change their role;
+    //   coordinators may update anyone (assigning supervisors, etc).
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId
+        && (request.resource.data.role == 'student' || isCoordinator());
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role)
+        || isCoordinator()
+      );
+      allow delete: if isCoordinator();
+    }
+
+    // LOGBOOK ENTRIES collection
+    // Fields: student_id, entry_date, submitted_at, content, week_number,
+    // status, supervisor_comment, grade.
+    match /logbook_entries/{entryId} {
+      allow read: if isSignedIn() && (
+        resource.data.student_id == request.auth.uid || isStaff()
+      );
+      allow create: if isStudent() && request.resource.data.student_id == request.auth.uid;
+      allow update: if isSignedIn() && (
+        // student may edit their own entry while still pending
+        (request.auth.uid == resource.data.student_id && resource.data.status == 'pending')
+        // Only the industry supervisor reviews day-to-day entries (they
+        // witness the work at the placement) or a coordinator acting in an
+        // administrative capacity. The institution supervisor is
+        // read-only here — oversight, not review.
+        || isIndustrySupervisor()
+        || isCoordinator()
+      );
+      allow delete: if isCoordinator();
+    }
+
+    // PLACEMENTS collection
+    match /placements/{placementId} {
+      allow read: if isSignedIn() && (
+        resource.data.student_id == request.auth.uid
+        || resource.data.industry_supervisor_id == request.auth.uid
+        || isStaff()
+      );
+      allow create: if isCoordinator();
+      allow update: if isCoordinator() || isIndustrySupervisor();
+      allow delete: if isCoordinator();
+    }
+
+    // COMPLIANCE FLAGS collection
+    match /compliance_flags/{flagId} {
+      allow read: if isSignedIn() && (
+        resource.data.student_id == request.auth.uid || isStaff()
+      );
+      allow create: if isSignedIn();
+      allow update: if isStaff();
+      allow delete: if isCoordinator();
+    }
+
+    // SUPERVISOR VISIT LOGS collection
+    match /supervisor_visit_logs/{logId} {
+      allow read: if isSignedIn() && (
+        resource.data.student_id == request.auth.uid
+        || resource.data.institution_supervisor_id == request.auth.uid
+        || isCoordinator()
+      );
+      allow create: if isInstitutionSupervisor() && request.resource.data.institution_supervisor_id == request.auth.uid;
+      allow update: if isInstitutionSupervisor() && resource.data.institution_supervisor_id == request.auth.uid || isCoordinator();
+      allow delete: if isCoordinator();
+    }
+
+    // ATTENDANCE CHECK-INS collection
+    // Fields: student_id, placement_id, date, checked_in_at, latitude,
+    // longitude, distance_meters, within_range. A student may only create
+    // their own check-in (never edit/delete it after the fact — the GPS
+    // record has to stay tamper-proof for it to mean anything as proof of
+    // attendance).
+    match /attendance_checkins/{checkinId} {
+      allow read: if isSignedIn() && (
+        resource.data.student_id == request.auth.uid || isStaff()
+      );
+      allow create: if isStudent() && request.resource.data.student_id == request.auth.uid;
+      allow update: if false;
+      allow delete: if isCoordinator();
+    }
+
+    // ASSESSMENTS collection
+    match /assessments/{assessmentId} {
+      allow read: if isSignedIn() && (
+        resource.data.student_id == request.auth.uid || isStaff()
+      );
+      allow write: if isStaff();
+    }
+
+    // Default fallback: no access unless explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "SIWES Monitoring System",
+  "description": "A real-time compliance monitoring platform for managing students on SIWES attachment, featuring logbook tracking, RBAC, and anomaly detection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
